@@ -10,20 +10,31 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# Ocultar por completo la barra superior donde se aloja el ícono de GitHub
+# Oculta solo el menú de desarrollo y GitHub sin romper el menú móvil
 st.markdown(
     """
     <style>
-    header[data-testid="stHeader"] {
+    /* Ocultar el ícono de GitHub y el menú de desarrollo de la derecha */
+    div[data-testid="stAppDeployButton"], 
+    div[data-testid="stConnectionStatus"],
+    button[id="MainMenu"] {
         display: none !important;
     }
+    
+    /* Asegurar que el botón del sidebar (izquierda) se mantenga visible */
+    button[data-testid="stSidebarCollapseButton"] {
+        display: inline-flex !important;
+    }
+    
+    /* Ocultar el pie de página por si acaso */
     footer {
-        visibility: hidden;
+        visibility: hidden !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
+
 
 # Inicialización de estados de Streamlit para control de borrado automático y mensajes persistentes
 if "widget_counter" not in st.session_state:
