@@ -10,6 +10,17 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+# DEBE SER LA PRIMERA INSTRUCCIÓN DE STREAMLIT EN TU CÓDIGO
+st.set_page_config(
+    page_title="Mi App",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
+)
+
+
 # Inicialización de estados de Streamlit para control de borrado automático y mensajes persistentes
 if "widget_counter" not in st.session_state:
     st.session_state.widget_counter = 0
