@@ -2,9 +2,21 @@ import streamlit as st
 import pandas as pd
 import os
 import io
+import datetime  # <-- Agregado para generar nombres únicos de archivos y evitar sobreescrituras
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+# --- ☁️ LIBRERÍAS AGREGADAS PARA GOOGLE DRIVE ---
+from googleapiclient.discovery import build
+from google.oauth2 import service_account
+from googleapiclient.http import MediaIoBaseUpload
+
+# Inicialización de estados de Streamlit para control de borrado automático y mensajes persistentes
+if "widget_counter" not in st.session_state:
+    st.session_state.widget_counter = 0
+if "mensaje_exito" not in st.session_state:
+    st.session_state.mensaje_exito = None
 
 # Configuración de la página
 st.set_page_config(
@@ -236,8 +248,6 @@ FORMATOS_CAE = {
     }
 }
 
-# --- LISTA EXACTA Y RESTRINGIDA DE NOMBRES FÍSICOS DE TUS ARCHIVOS ---
-# Con esto, el código ya no "adivina" nada. Llama al archivo exacto que tú indicaste.
 NOMBRES_EXACTOS_JEL = {
     "FM02": "FM02-GOECOR-JEL.docx",
     "FM03": "FM03-GOECOR-JEL.xlsx",
@@ -391,7 +401,6 @@ if tipo_linea == "FM - JEL":
         format_func=lambda x: f"{FORMATOS_JEL[x]['codigo']}"
     )
     info_f = FORMATOS_JEL[formato_seleccionado]
-    # Usamos el diccionario estricto para JEL
     nombre_archivo_fisico = NOMBRES_EXACTOS_JEL[formato_seleccionado]
 else:
     formato_seleccionado = st.sidebar.selectbox(
@@ -400,8 +409,109 @@ else:
         format_func=lambda x: f"{FORMATOS_CAE[x]['codigo']}"
     )
     info_f = FORMATOS_CAE[formato_seleccionado]
-    # Usamos el diccionario estricto para CAE
     nombre_archivo_fisico = NOMBRES_EXACTOS_CAE[formato_seleccionado]
+
+# --- 📸 DIGITALIZACIÓN Y GUARDADO EN GOOGLE DRIVE ---
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("### 📸 Digitalización de Formatos")
+    
+    # 1. El usuario escoge qué formato va a subir/fotografiar
+    if tipo_linea == "FM - JEL":
+        lista_opciones_subida = [FORMATOS_JEL[k]["codigo"] for k in FORMATOS_JEL.keys()]
+    else:
+        lista_opciones_subida = [FORMATOS_CAE[k]["codigo"] for k in FORMATOS_CAE.keys()]
+        
+    formato_a_subir = st.selectbox(
+        "¿Qué formato vas a subir o fotografiar?",
+        options=lista_opciones_subida
+    )
+    
+    # --- CAJA DE TEXTO PARA NOMBRE PERSONALIZADO ---
+    nombre_persona = st.text_input(
+        "✍️ Nombre de la Persona / Responsable:",
+        placeholder="Ej. Juan Perez",
+        help="El nombre que coloques aquí se usará directamente para guardar los archivos.",
+        key=f"nombre_ready_{st.session_state.widget_counter}"
+    )
+    
+    # Renderizado del mensaje persistente de éxito
+    if st.session_state.mensaje_exito:
+        st.success(st.session_state.mensaje_exito)
+        st.session_state.mensaje_exito = None
+
+    # Claves dinámicas para limpiar widgets
+    uploader_dinamico_key = f"uploader_ready_{st.session_state.widget_counter}"
+    camera_dinamica_key = f"camera_ready_{st.session_state.widget_counter}"
+
+    # 2. Opción de subir foto desde archivos
+    archivos_subidos = st.file_uploader(
+        "SUBIR FOTO DE TUS FM AQUÍ 📤", 
+        type=['png', 'jpg', 'jpeg'], 
+        accept_multiple_files=True,
+        key=uploader_dinamico_key
+    )
+    
+    # 3. Opción condicional para activar cámara
+    activar_camara = st.checkbox("📷 Activar cámara para tomar foto")
+    foto_camara = None
+    
+    if activar_camara:
+        foto_camara = st.camera_input("Captura tu formato aquí", key=camera_dinamica_key)
+    
+    # --- ☁️ 4. LÓGICA DE ALMACENAMIENTO AUTOMÁTICO EN GOOGLE DRIVE ---
+    if archivos_subidos or foto_camara:
+        
+        # ID Fijo de tu carpeta principal de Google Drive
+        FOLDER_ID = "1m7FRQ_dZu5HKtxbjHbHs9G8okVreBEJ5"
+        
+        # Sanitizar nombres para archivos estructurados
+        codigo_limpio = formato_a_subir.replace('/', '-')
+        
+        if nombre_persona.strip():
+            nombre_limpio_archivo = "".join(c for c in nombre_persona if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        else:
+            nombre_limpio_archivo = "ANONIMO"
+        
+        timestamp_actual = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        contador_guardados = 0
+        
+        try:
+            # 1. Autenticación con los secretos de Streamlit
+            creds = service_account.Credentials.from_service_account_info(st.secrets["gcreds"])
+            drive_service = build('drive', 'v3', credentials=creds)
+
+            # 2. Subir múltiples fotos de archivo
+            if archivos_subidos:
+                for i, archivo_img in enumerate(archivos_subidos):
+                    nombre_archivo_final = f"{codigo_limpio}_{nombre_limpio_archivo}_UPLOAD_{timestamp_actual}_{i}.png"
+                    foto_bytes = archivo_img.getvalue()
+                    
+                    file_metadata = {'name': nombre_archivo_final, 'parents': [FOLDER_ID]}
+                    media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/png', resumable=True)
+                    
+                    drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                    contador_guardados += 1
+                    
+            # 3. Subir foto capturada con cámara web
+            if foto_camara:
+                nombre_archivo_final = f"{codigo_limpio}_{nombre_limpio_archivo}_CAM_{timestamp_actual}.png"
+                foto_bytes = foto_camara.getvalue()
+                
+                file_metadata = {'name': nombre_archivo_final, 'parents': [FOLDER_ID]}
+                media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/png', resumable=True)
+                
+                drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                contador_guardados += 1
+                
+            # --- LÓGICA DE BORRADO AUTOMÁTICO Y ADVERTENCIA DE SUBIDO EXITOSO ---
+            if contador_guardados > 0:
+                st.session_state.mensaje_exito = f"💥 ¡SUBIDO EXITOSO!\n\nSe han guardado **{contador_guardados}** archivo(s) de **`{nombre_limpio_archivo}`** directamente en tu ☁️ **Google Drive**."
+                st.session_state.widget_counter += 1
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Error al conectar o subir a Google Drive: {e}")
 
 # --- RENDERIZADO PRINCIPAL ---
 col_izq, col_der = st.columns([2, 3])
@@ -420,15 +530,12 @@ with col_izq:
     st.markdown(f'<div class="signature-box">🔒 {info_f["firmas"]}</div>', unsafe_allow_html=True)
     
     st.markdown("### 📥 Descarga de Plantilla Oficial")
-    st.write(f"De acuerdo al flujo del manual, se sugiere el uso de formato **{info_f['tipo_descarga']}**.")
+    st.write(f"De acuerdo al flujo del manual, se sugerir el uso de formato **{info_f['tipo_descarga']}**.")
     
-    # 1. Identificar carpeta
+    # Identificar carpeta y archivo físico
     carpeta_actual = os.path.dirname(os.path.abspath(__file__))
-    
-    # 2. Construir la ruta completa al archivo físico
     ruta_archivo = os.path.join(carpeta_actual, nombre_archivo_fisico)
     
-    # 3. Mostrar botón de descarga del archivo original si existe
     if os.path.exists(ruta_archivo):
         with open(ruta_archivo, "rb") as file:
             st.download_button(
