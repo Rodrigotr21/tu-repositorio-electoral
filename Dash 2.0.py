@@ -10,18 +10,20 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# Código CSS oculto para borrar el ícono de GitHub de la interfaz
-ocultar_github = """
-<style>
-#GithubIcon {
-    visibility: hidden;
-}
-.viewerBadge_container__r7elq, .styles_viewerBadge__1yB5_ {
-    display: none !important;
-}
-</style>
-"""
-st.markdown(ocultar_github, unsafe_allow_html=True)
+# Ocultar por completo la barra superior donde se aloja el ícono de GitHub
+st.markdown(
+    """
+    <style>
+    header[data-testid="stHeader"] {
+        display: none !important;
+    }
+    footer {
+        visibility: hidden;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # Inicialización de estados de Streamlit para control de borrado automático y mensajes persistentes
 if "widget_counter" not in st.session_state:
