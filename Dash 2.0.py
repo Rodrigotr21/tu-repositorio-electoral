@@ -411,7 +411,8 @@ else:
     info_f = FORMATOS_CAE[formato_seleccionado]
     nombre_archivo_fisico = NOMBRES_EXACTOS_CAE[formato_seleccionado]
 
-# --- 📸 DIGITALIZACIÓN Y GUARDADO EN GOOGLE DRIVE ---
+
+# --- 📸 DIGITALIZACIÓN DE FORMATOS Y GUARDADO REAL EN GOOGLE DRIVE ---
 with st.sidebar:
     st.markdown("---")
     st.markdown("### 📸 Digitalización de Formatos")
@@ -427,20 +428,20 @@ with st.sidebar:
         options=lista_opciones_subida
     )
     
-    # --- CAJA DE TEXTO PARA NOMBRE PERSONALIZADO ---
+    # --- ✍️ MODIFICACIÓN: CAJA DE TEXTO PARA NOMBRE PERSONALIZADO ---
     nombre_persona = st.text_input(
         "✍️ Nombre de la Persona / Responsable:",
         placeholder="Ej. Juan Perez",
         help="El nombre que coloques aquí se usará directamente para guardar los archivos.",
-        key=f"nombre_ready_{st.session_state.widget_counter}"
+        key=f"nombre_ready_{st.session_state.widget_counter}"  # <-- Línea agregada para el borrado automático
     )
     
-    # Renderizado del mensaje persistente de éxito
+    # Renderizado del mensaje persistente de éxito antes de resetear componentes vacíos
     if st.session_state.mensaje_exito:
         st.success(st.session_state.mensaje_exito)
-        st.session_state.mensaje_exito = None
+        st.session_state.mensaje_exito = None  # Se borra del estado interno para futuras acciones
 
-    # Claves dinámicas para limpiar widgets
+    # Claves dinámicas utilizando el contador para limpiar los widgets automáticamente al guardar con éxito
     uploader_dinamico_key = f"uploader_ready_{st.session_state.widget_counter}"
     camera_dinamica_key = f"camera_ready_{st.session_state.widget_counter}"
 
@@ -462,7 +463,7 @@ with st.sidebar:
     # --- ☁️ 4. LÓGICA DE ALMACENAMIENTO AUTOMÁTICO EN GOOGLE DRIVE ---
     if archivos_subidos or foto_camara:
         
-        # ID Fijo de tu carpeta principal de Google Drive
+        # ID Fijo de tu carpeta principal de Google Drive (Extraído de tu URL)
         FOLDER_ID = "1m7FRQ_dZu5HKtxbjHbHs9G8okVreBEJ5"
         
         # Sanitizar nombres para archivos estructurados
@@ -477,19 +478,22 @@ with st.sidebar:
         contador_guardados = 0
         
         try:
-            # 1. Autenticación con los secretos de Streamlit
-            creds = service_account.Credentials.from_service_account_info(st.secrets["gcreds"])
+            # 1. Declarar los permisos y autenticarse con los secretos de Streamlit
+            SCOPES = ['https://www.googleapis.com/auth/drive']
+            creds = service_account.Credentials.from_service_account_info(st.secrets["gcreds"], scopes=SCOPES)
             drive_service = build('drive', 'v3', credentials=creds)
 
             # 2. Subir múltiples fotos de archivo
             if archivos_subidos:
                 for i, archivo_img in enumerate(archivos_subidos):
+                    # Construimos un nombre único e irrepetible para el archivo en Drive
                     nombre_archivo_final = f"{codigo_limpio}_{nombre_limpio_archivo}_UPLOAD_{timestamp_actual}_{i}.png"
                     foto_bytes = archivo_img.getvalue()
                     
                     file_metadata = {'name': nombre_archivo_final, 'parents': [FOLDER_ID]}
                     media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/png', resumable=True)
                     
+                    # Ejecutar subida
                     drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
                     contador_guardados += 1
                     
@@ -501,14 +505,15 @@ with st.sidebar:
                 file_metadata = {'name': nombre_archivo_final, 'parents': [FOLDER_ID]}
                 media = MediaIoBaseUpload(io.BytesIO(foto_bytes), mimetype='image/png', resumable=True)
                 
+                # Ejecutar subida
                 drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
                 contador_guardados += 1
                 
             # --- LÓGICA DE BORRADO AUTOMÁTICO Y ADVERTENCIA DE SUBIDO EXITOSO ---
             if contador_guardados > 0:
-                st.session_state.mensaje_exito = f"💥 ¡SUBIDO EXITOSO!\n\nSe han guardado **{contador_guardados}** archivo(s) de **`{nombre_limpio_archivo}`** directamente en tu ☁️ **Google Drive**."
-                st.session_state.widget_counter += 1
-                st.rerun()
+                st.session_state.mensaje_exito = f"💥 ¡SUBIDO EXITOSO!\n\nSe han guardado con éxito **{contador_guardados}** archivo(s) de **`{nombre_limpio_archivo}`** directamente en tu ☁️ **Google Drive**."
+                st.session_state.widget_counter += 1  # Incrementa el contador destruyendo los widgets anteriores y vaciándolos
+                st.rerun()  # Reinicia de inmediato limpiando la interfaz por completo
 
         except Exception as e:
             st.error(f"❌ Error al conectar o subir a Google Drive: {e}")
